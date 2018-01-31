@@ -6,13 +6,9 @@ var fetchVideoInfo = require('youtube-info');
 const util = require('util')
 
 var global_volume = 0.5;
-
-var song_duration = 15000;
-
+var global_play_duration = 15000;
 var last_song_data = "";
 var current_timer = "";
-
-// option to swap ff 4 and 2? because playlists are poopy
 
 
 // Configure logger settings
@@ -81,8 +77,8 @@ bot.on('message', (message) => {
 
             break;
             case 'duration':
-                set_play_duration(args[0]);
-                message.channel.send("All next songs will be played for: " + (song_duration / 1000) + " seconds");
+                set_global_play_duration(args[0]);
+                message.channel.send("All next songs will be played for: " + (global_play_duration / 1000) + " seconds");
             break;
             case 'replay':
                 if(last_song_data == "") {
@@ -111,8 +107,8 @@ bot.on('message', (message) => {
                         voiceChannel.leave();
                         current_timer = "";
                     }
-                    logger.info("setting delay to video info duration: " + last_song_data.duration + "s");
-                    current_timer = setTimeout(stop, last_song_data.duration_ms);
+                    logger.info("setting delay to video info duration: " + last_song_data.duration * 1000 + "s");
+                    current_timer = setTimeout(stop, last_song_data.duration * 1000);
                 }).catch(err => logger.error(err));
 
             break;
@@ -155,11 +151,11 @@ bot.on('message', (message) => {
 
 
 function SongData() {
-    this.ff_game_number = getRandomInt(1, ffcount);
+    this.ff_game_number = get_random_int(1, ffcount);
 
     this.init = function() {
         ff_song_count = ff_url_data[this.ff_game_number].urls.length;
-        this.song_index = getRandomInt(0, ff_song_count - 1);
+        this.song_index = get_random_int(0, ff_song_count - 1);
         this.url_id = ff_url_data[this.ff_game_number].urls[this.song_index];
         this.url = "https://www.youtube.com/watch?v=" + this.url_id;
         this.roman_numeral =  ff_url_data[this.ff_game_number].roman_numeral;
@@ -172,7 +168,7 @@ function SongData() {
     }
 
     this.determine_song_play_duration_ms = function() {
-        return (song_duration > this.duration ? song_duration : this.duration * 1000 );
+        return (global_play_duration > this.duration ? global_play_duration : this.duration * 1000 );
     }
 
     this.duration_ms = function() {
@@ -182,10 +178,10 @@ function SongData() {
     this.init();
 }
 
-function set_play_duration(text) {
+function set_global_play_duration(text) {
     try {
         var num = parseInt(text);
-        song_duration = num * 1000;
+        global_play_duration = num * 1000;
     } catch(ex) {
         logger.error(ex);
     }
@@ -209,10 +205,9 @@ function set_global_volume(text) {
  * Returns a random integer between min (inclusive) and max (inclusive)
  * Using Math.round() will give you a non-uniform distribution!
  */
-function getRandomInt(min, max) {
+function get_random_int(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 };
-
 
 
 function get_ff_data(number) {
@@ -222,11 +217,11 @@ function get_ff_data(number) {
 };
 
 function get_ff_url() {
-    var ff_game_number = getRandomInt(1, ffcount);
+    var ff_game_number = get_random_int(1, ffcount);
     logger.info('ff# = ' + ff_game_number);
 
     ff_song_count = ff_url_data[ff_game_number].urls.length;
-    var song_index = getRandomInt(0, ff_song_count - 1);
+    var song_index = get_random_int(0, ff_song_count - 1);
 
     ff_url_id = ff_url_data[ff_game_number].urls[song_index];
     ff_url = "https://www.youtube.com/watch?v=" + ff_url_id;
