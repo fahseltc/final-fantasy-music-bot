@@ -5,7 +5,7 @@ const ytdl = require('ytdl-core');
 var fetchVideoInfo = require('youtube-info');
 const util = require('util')
 
-const streamOptions = { seek: 0, volume: 0.5 };
+var global_volume = 0.5;
 
 var song_duration = 15000;
 
@@ -30,7 +30,7 @@ var ff_url_data = [];
 for (i = 1; i <= ffcount; i++) {
     ff_url_data[i] = get_ff_data(i);
 }
-logger.info(ff_url_data);
+logger.info("Data loaded..");
 
 
 // Initialize Discord Bot
@@ -38,14 +38,16 @@ var bot = new Discord.Client();
 bot.login(auth.token);
 
 bot.on('ready', (message) => {
-    logger.info('Connected');
+    logger.info('Connected to server');
 });
 
 bot.on('message', (message) => {
-    logger.info('got message ' + message.content);
     if (message.content.substring(0, 1) == '!') {
         var args = message.content.substring(1).split(' ');
-        var cmd = args[0];
+        var cmd = args[0].toLowerCase();
+        logger.info("-----");
+        logger.info("got message: !" + cmd);
+        logger.info("-----");
 
         args = args.splice(1);
         switch(cmd) {
@@ -54,10 +56,19 @@ bot.on('message', (message) => {
                 message.channel.send(" **!duration X** will set the song to play for X seconds. (default 15 seconds)");
                 message.channel.send(" **!replay** will replay the last song for its entire duration.");
                 message.channel.send(" **!stop** or **!boot** will make the bot stop playing and leave the channel immediately.");
+                message.channel.send(" **!volume X** Will set the global volume, 0 to 100.");
+            break;
+            case 'volume':
+                var volume_changed = set_global_volume(args[0]);
+                if (volume_changed) {
+                    message.channel.send("Volume set to: " + global_volume * 100);
+                } else {
+                    message.channel.send("Pick a valid volume");
+                }
+
             break;
             case 'stop':
             case 'boot':
-            logger.info("timer: " + current_timer);
                 if (current_timer) {
                     clearTimeout(current_timer);
                 }
@@ -74,82 +85,141 @@ bot.on('message', (message) => {
                 message.channel.send("All next songs will be played for: " + (song_duration / 1000) + " seconds");
             break;
             case 'replay':
-                if(last_song_data != "") {
-                    fetchVideoInfo(last_song_data.url_id).then(function(videoInfo) {
-                    message.channel.send("Replaying " + videoInfo.title);
-
-                    logger.info("song duration " + videoInfo.duration);
-                    logger.info("title " + videoInfo.title);
-                    //logger.info(util.inspect(videoInfo));
-
-                    var voiceChannel = message.member.voiceChannel;
-                    if (voiceChannel) {
-                        voiceChannel.join().then(connection => {
-                        logger.info("joined channel");
-                        const stream = ytdl(last_song_data.url, { filter : 'audioonly' });
-                        const dispatcher = connection.playStream(stream, streamOptions);
-
-                        var stop = function stop_playback() {
-                            logger.info("stopped playback");
-                            dispatcher.end(); // or pause!
-                            stream.destroy();
-                            voiceChannel.leave();
-                            current_timer = "";
-                        }
-                        logger.info("setting delay to video info duration: " + videoInfo.duration + "s");
-                        current_timer = setTimeout(stop, videoInfo.duration * 1000);
-                    }).catch(err => logger.error(err));
-                    } else {
-                        message.channel.send("You must be in a voice channel to use this bot.");
-                    }
-                });
-                } else {
+                if(last_song_data == "") {
                     message.channel.send("No last song saved.");
+                    return;
                 }
+
+                var voiceChannel = message.member.voiceChannel;
+                if (!voiceChannel) {
+                    message.channel.send("You must be in a voice channel to use this bot.");
+                    return;
+                }
+
+                logger.info(util.inspect(last_song_data));
+                message.channel.send("Replaying " + last_song_data.title);
+
+                voiceChannel.join().then(connection => {
+                    logger.info("joined channel");
+                    const stream = ytdl(last_song_data.url, { filter : 'audioonly' });
+                    const dispatcher = connection.playStream(stream, { seek: 0, volume: global_volume });
+
+                    var stop = function stop_playback() {
+                        logger.info("stopped playback");
+                        dispatcher.end(); // or pause!
+                        stream.destroy();
+                        voiceChannel.leave();
+                        current_timer = "";
+                    }
+                    logger.info("setting delay to video info duration: " + last_song_data.duration + "s");
+                    current_timer = setTimeout(stop, last_song_data.duration_ms);
+                }).catch(err => logger.error(err));
+
             break;
             case 'ffsong':
                 var song_data = new SongData();
-                last_song_data = song_data;
-
-                logger.info(util.inspect(song_data));
 
                 fetchVideoInfo(song_data.url_id).then(function(videoInfo) {
-                    logger.info("song duration " + videoInfo.duration);
-                    logger.info("title " + videoInfo.title);
-                    //logger.info(util.inspect(videoInfo));
-
                     var voiceChannel = message.member.voiceChannel;
-                    if (voiceChannel) {
-                        voiceChannel.join().then(connection => {
+                    if (!voiceChannel) {
+                        message.channel.send("You must be in a voice channel to use this bot.");
+                        return;
+                    }
+                    song_data.set_yt_data(videoInfo.title, videoInfo.duration);
+                    last_song_data = song_data;
+                    logger.info(util.inspect(song_data));
+
+                    voiceChannel.join().then(connection => {
                         logger.info("joined channel");
                         const stream = ytdl(song_data.url, { filter : 'audioonly' });
-                        const dispatcher = connection.playStream(stream, streamOptions);
+                        const dispatcher = connection.playStream(stream, { seek: 0, volume: global_volume });
 
                         var stop = function stop_playback() {
                             logger.info("stopped playback");
                             dispatcher.end(); // or pause!
                             stream.destroy();
                             voiceChannel.leave();
-                            message.channel.send("[" + song_data.roman_numeral + "] " + videoInfo.title);
-                            message.channel.send(videoInfo.url);
+                            message.channel.send("[" + song_data.roman_numeral + "] " + song_data.title);
+                            message.channel.send(song_data.url);
                             current_timer = "";
                         }
-                        logger.info("video info duration: " + videoInfo.duration + "s");
-                        logger.info("global max song duration: " + song_duration / 1000 + "s");
-                        var setting_delay_to = (videoInfo.duration < (song_duration / 1000) ? videoInfo.duration * 1000 : song_duration)
-                        logger.info("setting delay to: " + setting_delay_to + "ms");
-                        current_timer = setTimeout(stop, setting_delay_to);
+                        current_timer = setTimeout(stop, song_data.play_duration_ms);
                     }).catch(err => logger.error(err));
-                    } else {
-                        message.channel.send("You must be in a voice channel to use this bot.");
-                    }
                 });
             break;
             default:
-                message.channel.send("not a valid command");
+                message.channel.send("Not a valid command. Use the **!help** command.");
             }
     }
 });
+
+
+function SongData() {
+    this.ff_game_number = getRandomInt(1, ffcount);
+
+    this.init = function() {
+        ff_song_count = ff_url_data[this.ff_game_number].urls.length;
+        this.song_index = getRandomInt(0, ff_song_count - 1);
+        this.url_id = ff_url_data[this.ff_game_number].urls[this.song_index];
+        this.url = "https://www.youtube.com/watch?v=" + this.url_id;
+        this.roman_numeral =  ff_url_data[this.ff_game_number].roman_numeral;
+    };
+
+    this.set_yt_data = function(title, duration) {
+        this.title = title;
+        this.duration = duration;
+        this.play_duration_ms = this.determine_song_play_duration_ms();
+    }
+
+    this.determine_song_play_duration_ms = function() {
+        return (song_duration > this.duration ? song_duration : this.duration * 1000 );
+    }
+
+    this.duration_ms = function() {
+        return (this.duration * 1000);
+    }
+
+    this.init();
+}
+
+function set_play_duration(text) {
+    try {
+        var num = parseInt(text);
+        song_duration = num * 1000;
+    } catch(ex) {
+        logger.error(ex);
+    }
+};
+function set_global_volume(text) {
+    try {
+        var num = parseInt(text);
+        logger.info("volume is: " + num / 100);
+        if ((num <= 100) && (num >= 0)) {
+            global_volume = num / 100;
+            return true;
+        } else {
+            return false;
+        }
+    } catch(ex) {
+        logger.error(ex);
+        return false;
+    }
+};
+/**
+ * Returns a random integer between min (inclusive) and max (inclusive)
+ * Using Math.round() will give you a non-uniform distribution!
+ */
+function getRandomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+};
+
+
+
+function get_ff_data(number) {
+    var fs = require('fs');
+    var file = JSON.parse(fs.readFileSync( 'data/' + number + '.json', 'utf8'));
+    return file;
+};
 
 function get_ff_url() {
     var ff_game_number = getRandomInt(1, ffcount);
@@ -164,42 +234,3 @@ function get_ff_url() {
     var ff_numeral = ff_url_data[ff_game_number].roman_numeral;
     return [ff_url, ff_url_id, ff_numeral];
 };
-
-function SongData() {
-    this.ff_game_number = getRandomInt(1, ffcount);
-
-    this.init = function() {
-        ff_song_count = ff_url_data[this.ff_game_number].urls.length;
-        this.song_index = getRandomInt(0, ff_song_count - 1);
-        this.url_id = ff_url_data[this.ff_game_number].urls[this.song_index];
-        this.url = "https://www.youtube.com/watch?v=" + this.url_id;
-        this.roman_numeral =  ff_url_data[this.ff_game_number].roman_numeral;
-        logger.info("RNG -- Game: " + this.ff_game_number + ", song index / total songs: " + song_index + " / " + ff_song_count);
-    };
-
-    this.init();
-}
-
-function set_play_duration(text) {
-    try {
-        var num = parseInt(text);
-        song_duration = num * 1000;
-    } catch(ex) {
-        logger.error(ex);
-    }
-}
-
-/**
- * Returns a random integer between min (inclusive) and max (inclusive)
- * Using Math.round() will give you a non-uniform distribution!
- */
-function getRandomInt(min, max) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-};
-
-function get_ff_data(number) {
-    var fs = require('fs');
-    var file = JSON.parse(fs.readFileSync( 'data/' + number + '.json', 'utf8'));
-    return file;
-};
-
