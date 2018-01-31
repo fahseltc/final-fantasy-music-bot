@@ -78,7 +78,7 @@ bot.on('message', (message) => {
             break;
             case 'duration':
                 set_global_play_duration(args[0]);
-                message.channel.send("All next songs will be played for: " + (global_play_duration / 1000) + " seconds");
+                message.channel.send("All next songs will be played for: " + (global_play_duration / 1000) + " seconds, or the songs length.");
             break;
             case 'replay':
                 if(last_song_data == "") {
@@ -164,11 +164,15 @@ function SongData() {
     this.set_yt_data = function(title, duration) {
         this.title = title;
         this.duration = duration;
-        this.play_duration_ms = this.determine_song_play_duration_ms();
+        this.play_duration_ms = this.song_play_duration_ms();
     }
 
-    this.determine_song_play_duration_ms = function() {
-        return (global_play_duration > this.duration ? global_play_duration : this.duration * 1000 );
+    this.song_play_duration_ms = function() {
+        if (global_play_duration / 1000 >= this.duration) {
+            return this.duration * 1000 + 500; // add half second.
+        } else {
+            return global_play_duration;
+        }
     }
 
     this.duration_ms = function() {
